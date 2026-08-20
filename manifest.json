@@ -1,0 +1,15 @@
+{
+    "name": "Comment Media",
+    "version": "1.0.0",
+    "description": "Cho phép upload ảnh, video, audio trong bình luận",
+    "author": "Jankx",
+    "extension_id": "comment-media",
+    "context": ["admin", "frontend", "ajax", "rest"],
+    "caller": {
+        "file": "CommentMediaExtension.php",
+        "class": "Jankx\\Extensions\\CommentMedia\\CommentMediaExtension",
+        "method": "init"
+    },
+    "auto_activate": true,
+    "settings_url": "admin.php?page=jankx-comment-media-settings"
+}

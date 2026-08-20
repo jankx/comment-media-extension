@@ -1,0 +1,13 @@
+{
+    "name": "jankx/comment-media",
+    "description": "Media attachments for WordPress comments",
+    "type": "wordpress-extension",
+    "require": {
+        "php": ">=7.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Jankx\\Extensions\\CommentMedia\\": "src/"
+        }
+    }
+}
