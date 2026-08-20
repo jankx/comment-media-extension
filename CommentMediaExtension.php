@@ -4,6 +4,9 @@ namespace Jankx\Extensions\CommentMedia;
 
 use Jankx\Extensions\AbstractExtension;
 use Jankx\Extensions\CommentMedia\Admin\Settings;
+use Jankx\Dashboard\Elements\Page;
+use Jankx\Dashboard\Elements\Section;
+use Jankx\Dashboard\Factories\FieldFactory;
 
 class CommentMediaExtension extends AbstractExtension
 {
@@ -50,11 +53,118 @@ class CommentMediaExtension extends AbstractExtension
 
         add_action('rest_api_init', [$this, 'registerRestRoutes']);
 
-        add_filter('comment_form_default_fields', [$this, 'addMediaUploadZone']);
+        add_action('comment_form_top', [$this, 'addMediaUploadZone']);
 
         add_action('comment_post', [$this, 'saveMedia'], 10, 3);
 
         add_filter('comment_text', [$this, 'displayMedia'], 10, 2);
+
+        if (is_admin()) {
+            add_action('admin_init', [$this, 'registerSettingsPage']);
+        }
+    }
+
+    public function registerSettingsPage(): void
+    {
+        try {
+            $app = \Jankx\Facades\App::getInstance();
+            if (!$app || !$app->bound('theme-options')) {
+                return;
+            }
+
+            $themeOptions = $app->make('theme-options');
+            if (!$themeOptions) {
+                return;
+            }
+
+            $adapter = $themeOptions->getAdapter();
+            if (!$adapter || !method_exists($adapter, 'getFramework')) {
+                return;
+            }
+
+            $framework = $adapter->getFramework();
+            if (!$framework) {
+                return;
+            }
+
+            $page = new Page(__('Media trong bình luận', 'jankx'));
+            $page->setId('comment_media');
+            $page->setIcon('dashicons-format-gallery');
+            $page->setDescription(__('Cấu hình upload ảnh, video, audio trong bình luận.', 'jankx'));
+            $page->setPriority(90);
+
+            $section = new Section(__('Cài đặt Media', 'jankx'));
+            $section->setId('comment_media_settings');
+            $section->setDescription(__('Tùy chọn upload media trong bình luận.', 'jankx'));
+
+            $fields = [
+                [
+                    'id' => 'cm_enabled',
+                    'name' => __('Bật tính năng', 'jankx'),
+                    'type' => 'switch',
+                    'default' => true,
+                    'on' => __('Bật', 'jankx'),
+                    'off' => __('Tắt', 'jankx'),
+                    'description' => __('Cho phép người dùng upload media khi bình luận.', 'jankx'),
+                ],
+                [
+                    'id' => 'cm_max_files',
+                    'name' => __('Số file tối đa', 'jankx'),
+                    'type' => 'slider',
+                    'min' => 1,
+                    'max' => 10,
+                    'step' => 1,
+                    'default' => 3,
+                    'display_value' => true,
+                    'description' => __('Số lượng file tối đa mỗi bình luận.', 'jankx'),
+                ],
+                [
+                    'id' => 'cm_max_size',
+                    'name' => __('Dung lượng tối đa (MB)', 'jankx'),
+                    'type' => 'slider',
+                    'min' => 1,
+                    'max' => 50,
+                    'step' => 1,
+                    'default' => 5,
+                    'display_value' => true,
+                    'description' => __('Dung lượng tối đa mỗi file.', 'jankx'),
+                ],
+                [
+                    'id' => 'cm_allowed_types',
+                    'name' => __('Loại file cho phép', 'jankx'),
+                    'type' => 'checkbox',
+                    'options' => [
+                        'image' => __('Ảnh (JPG, PNG, GIF, WebP)', 'jankx'),
+                        'video' => __('Video (MP4, WebM, OGG)', 'jankx'),
+                        'audio' => __('Âm thanh (MP3, WAV, OGG)', 'jankx'),
+                    ],
+                    'default' => ['image', 'video', 'audio'],
+                    'description' => __('Chọn các loại file được phép upload.', 'jankx'),
+                ],
+            ];
+
+            foreach ($fields as $fieldData) {
+                $field = FieldFactory::create(
+                    $fieldData['id'],
+                    $fieldData['name'],
+                    $fieldData['type'],
+                    $fieldData
+                );
+                if ($field) {
+                    $section->addField($field);
+                }
+            }
+
+            $page->addSection($section);
+            $framework->addPage($page);
+
+            error_log('Comment Media: Page registered. Sections: ' . count($page->getSections()));
+            foreach ($page->getSections() as $sec) {
+                error_log('  Section: ' . $sec->getTitle() . ' fields: ' . count($sec->getFields()));
+            }
+        } catch (\Exception $e) {
+            error_log('Comment Media: Error registering settings page - ' . $e->getMessage());
+        }
     }
 
     public function enqueueAssets(): void
@@ -127,10 +237,10 @@ class CommentMediaExtension extends AbstractExtension
         return $handler->handle($request);
     }
 
-    public function addMediaUploadZone(array $fields): array
+    public function addMediaUploadZone($post = null): void
     {
         if (!$this->isEnabled()) {
-            return $fields;
+            return;
         }
 
         ob_start();
@@ -173,12 +283,7 @@ class CommentMediaExtension extends AbstractExtension
             </div>
         </div>
         <?php
-        $mediaField = ob_get_clean();
-
-        $commentField = $fields['comment'];
-        $fields['comment'] = $mediaField . $commentField;
-
-        return $fields;
+        echo ob_get_clean();
     }
 
     public function saveMedia(int $commentId, int $approved, array $commentData): void
@@ -200,12 +305,13 @@ class CommentMediaExtension extends AbstractExtension
         update_comment_meta($commentId, self::COMMENT_META_KEY, $mediaIds);
     }
 
-    public function displayMedia(string $commentText, int $commentId = 0): string
+    public function displayMedia(string $commentText, $comment = null): string
     {
-        if (!$commentId) {
+        if (!$comment instanceof \WP_Comment) {
             return $commentText;
         }
 
+        $commentId = $comment->comment_ID;
         $mediaIds = get_comment_meta($commentId, self::COMMENT_META_KEY, true);
 
         if (empty($mediaIds) || !is_array($mediaIds)) {
