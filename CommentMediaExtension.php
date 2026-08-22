@@ -51,6 +51,9 @@ class CommentMediaExtension extends AbstractExtension
     {
         add_action('wp_enqueue_scripts', [$this, 'enqueueAssets']);
 
+        add_action('wp_ajax_comment_media_upload', [$this, 'handleAjaxUpload']);
+        add_action('wp_ajax_nopriv_comment_media_upload', [$this, 'handleAjaxUpload']);
+
         add_action('rest_api_init', [$this, 'registerRestRoutes']);
 
         add_action('comment_form_top', [$this, 'addMediaUploadZone']);
@@ -189,8 +192,9 @@ class CommentMediaExtension extends AbstractExtension
         );
 
         wp_localize_script('comment-media', 'commentMedia', [
-            'restUrl' => rest_url('comment-media/v1/upload'),
-            'nonce' => wp_create_nonce('wp_rest'),
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'action' => 'comment_media_upload',
+            'nonce' => wp_create_nonce('comment_media_upload'),
             'maxFiles' => $this->getMaxFiles(),
             'maxSize' => $this->getMaxSize(),
             'allowedTypes' => $this->getAllowedTypes(),
@@ -235,6 +239,72 @@ class CommentMediaExtension extends AbstractExtension
     {
         $handler = new \Jankx\Extensions\CommentMedia\Ajax\UploadHandler();
         return $handler->handle($request);
+    }
+
+    public function handleAjaxUpload(): void
+    {
+        if (empty($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'comment_media_upload')) {
+            wp_send_json_error(['message' => __('Security check failed.', 'jankx')]);
+        }
+
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => __('Vui lòng đăng nhập để upload file.', 'jankx')]);
+        }
+
+        if (empty($_FILES['chunk'])) {
+            wp_send_json_error(['message' => __('Không tìm thấy file.', 'jankx')]);
+        }
+
+        $uploadId = sanitize_text_field($_POST['upload_id'] ?? '');
+        $chunkIndex = intval($_POST['chunk_index'] ?? 0);
+        $totalChunks = intval($_POST['total_chunks'] ?? 1);
+        $fileName = sanitize_file_name($_POST['file_name'] ?? 'upload');
+        $fileType = sanitize_text_field($_POST['file_type'] ?? 'application/octet-stream');
+        $fileSize = intval($_POST['file_size'] ?? 0);
+
+        $chunksDir = wp_upload_dir()['basedir'] . '/.cm_chunks';
+        if (!file_exists($chunksDir)) {
+            wp_mkdir_p($chunksDir);
+        }
+
+        $chunkFile = $chunksDir . '/' . $uploadId . '_' . $chunkIndex;
+        move_uploaded_file($_FILES['chunk']['tmp_name'], $chunkFile);
+
+        if ($chunkIndex < $totalChunks - 1) {
+            wp_send_json_success(['complete' => false]);
+        }
+
+        $finalTmp = tempnam(sys_get_temp_dir(), 'cm_');
+        $out = fopen($finalTmp, 'wb');
+        for ($i = 0; $i < $totalChunks; $i++) {
+            $cf = $chunksDir . '/' . $uploadId . '_' . $i;
+            if (file_exists($cf)) {
+                $in = fopen($cf, 'rb');
+                stream_copy_to_stream($in, $out);
+                fclose($in);
+                @unlink($cf);
+            }
+        }
+        fclose($out);
+
+        $file = [
+            'name' => $fileName,
+            'type' => $fileType,
+            'tmp_name' => $finalTmp,
+            'size' => $fileSize,
+            'error' => UPLOAD_ERR_OK,
+        ];
+
+        $handler = new \Jankx\Extensions\CommentMedia\Ajax\UploadHandler();
+        $result = $handler->handleFile($file);
+
+        @unlink($finalTmp);
+
+        if (is_wp_error($result)) {
+            wp_send_json_error(['message' => $result->get_error_message()]);
+        }
+
+        wp_send_json_success($result);
     }
 
     public function addMediaUploadZone($post = null): void

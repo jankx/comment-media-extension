@@ -43,49 +43,59 @@ class UploadHandler
         }
 
         $file = $_FILES['file'];
+        $result = $this->handleFile($file);
 
-        $error = $this->validateFile($file);
-        if (is_wp_error($error)) {
+        if (is_wp_error($result)) {
             return new \WP_REST_Response([
                 'success' => false,
-                'message' => $error->get_error_message(),
-            ], 400);
+                'message' => $result->get_error_message(),
+            ], 500);
+        }
+
+        return new \WP_REST_Response([
+            'success' => true,
+            'data' => $result,
+        ], 200);
+    }
+
+    public function handleFile(array $file)
+    {
+        $error = $this->validateFile($file);
+        if ($error !== null) {
+            return $error;
         }
 
         $attachmentId = $this->uploadFile($file);
 
         if (is_wp_error($attachmentId)) {
-            return new \WP_REST_Response([
-                'success' => false,
-                'message' => $attachmentId->get_error_message(),
-            ], 500);
+            return $attachmentId;
         }
 
         $attachmentUrl = wp_get_attachment_url($attachmentId);
         $mimeType = get_post_mime_type($attachmentId);
         $type = explode('/', $mimeType)[0];
 
-        return new \WP_REST_Response([
-            'success' => true,
-            'data' => [
-                'attachmentId' => $attachmentId,
-                'url' => $attachmentUrl,
-                'type' => $type,
-                'mimeType' => $mimeType,
-                'name' => sanitize_file_name($file['name']),
-                'size' => $file['size'],
-                'sizeFormatted' => size_format($file['size']),
-            ],
-        ], 200);
+        return [
+            'attachmentId' => $attachmentId,
+            'url' => $attachmentUrl,
+            'type' => $type,
+            'mimeType' => $mimeType,
+            'name' => sanitize_file_name($file['name']),
+            'size' => $file['size'],
+            'sizeFormatted' => size_format($file['size']),
+        ];
     }
 
-    protected function validateFile(array $file): \WP_Error
+    protected function validateFile(array $file): ?\WP_Error
     {
         if ($file['error'] !== UPLOAD_ERR_OK) {
             return new \WP_Error('upload_error', $this->getUploadErrorMessage($file['error']));
         }
 
-        $extension = new CommentMediaExtension();
+        $extension = CommentMediaExtension::get_instance();
+        if (!$extension) {
+            return new \WP_Error('extension_unavailable', __('Extension chưa được khởi tạo.', 'jankx'));
+        }
         $maxSize = $extension->getMaxSize() * 1024 * 1024;
 
         if ($file['size'] > $maxSize) {
@@ -113,10 +123,13 @@ class UploadHandler
             );
         }
 
-        return true;
+        return null;
     }
 
-    protected function uploadFile(array $file): int
+    /**
+     * @return int|\WP_Error
+     */
+    protected function uploadFile(array $file)
     {
         require_once ABSPATH . 'wp-admin/includes/file.php';
         require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -135,7 +148,7 @@ class UploadHandler
             return new \WP_Error('upload_failed', $uploadResult['error']);
         }
 
-        $attachmentData = wp_read_image_metadata($uploadResult['file'], false, $file['name']);
+        $attachmentData = wp_read_image_metadata($uploadResult['file']);
 
         $categoryId = $this->getOrCreateCommentCategory();
 
