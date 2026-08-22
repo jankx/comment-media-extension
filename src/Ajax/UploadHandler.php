@@ -60,16 +60,26 @@ class UploadHandler
 
     public function handleFile(array $file)
     {
+        $debug = defined('WP_DEBUG') && WP_DEBUG;
+
+        if ($debug) error_log('CommentMedia UploadHandler: handleFile name=' . $file['name'] . ' type=' . $file['type'] . ' size=' . $file['size'] . ' tmp=' . $file['tmp_name']);
+
         $error = $this->validateFile($file);
         if ($error !== null) {
+            if ($debug) error_log('CommentMedia UploadHandler: validate failed: ' . $error->get_error_message());
             return $error;
         }
+
+        if ($debug) error_log('CommentMedia UploadHandler: validation passed, calling uploadFile');
 
         $attachmentId = $this->uploadFile($file);
 
         if (is_wp_error($attachmentId)) {
+            if ($debug) error_log('CommentMedia UploadHandler: uploadFile failed: ' . $attachmentId->get_error_message());
             return $attachmentId;
         }
+
+        if ($debug) error_log('CommentMedia UploadHandler: uploadFile success, id=' . $attachmentId);
 
         $attachmentUrl = wp_get_attachment_url($attachmentId);
         $mimeType = get_post_mime_type($attachmentId);
@@ -135,29 +145,38 @@ class UploadHandler
         require_once ABSPATH . 'wp-admin/includes/media.php';
         require_once ABSPATH . 'wp-admin/includes/image.php';
 
-        $_FILES['comment_media_file'] = $file;
-
-        $uploadOverrides = [
-            'test_form' => false,
-            'action' => 'wp_handle_upload',
-        ];
-
-        $uploadResult = wp_handle_upload($file, $uploadOverrides);
-
-        if (isset($uploadResult['error'])) {
-            return new \WP_Error('upload_failed', $uploadResult['error']);
+        $time = current_time('mysql');
+        $uploads = wp_upload_dir($time);
+        if (!$uploads || !empty($uploads['error'])) {
+            return new \WP_Error('upload_dir_error', $uploads['error']);
         }
 
-        $attachmentData = wp_read_image_metadata($uploadResult['file']);
+        $filename = wp_unique_filename($uploads['path'], $file['name']);
+
+        $new_file = $uploads['path'] . '/' . $filename;
+
+        if (false === @copy($file['tmp_name'], $new_file)) {
+            return new \WP_Error('upload_failed', sprintf(
+                __('Không thể copy file đến %s.', 'jankx'),
+                $uploads['subdir']
+            ));
+        }
+
+        @chmod($new_file, 0644);
+
+        $url = $uploads['url'] . '/' . $filename;
+        $type = $file['type'];
+
+        $attachmentData = wp_read_image_metadata($new_file);
 
         $categoryId = $this->getOrCreateCommentCategory();
 
         $attachmentArgs = [
             'post_title' => sanitize_file_name($file['name']),
-            'post_mime_type' => $uploadResult['type'],
+            'post_mime_type' => $type,
             'post_status' => 'inherit',
             'post_content' => '',
-            'guid' => $uploadResult['url'],
+            'guid' => $url,
             'post_category' => [$categoryId],
         ];
 
@@ -170,13 +189,13 @@ class UploadHandler
             }
         }
 
-        $attachmentId = wp_insert_attachment($attachmentArgs, $uploadResult['file']);
+        $attachmentId = wp_insert_attachment($attachmentArgs, $new_file);
 
         if (is_wp_error($attachmentId)) {
             return $attachmentId;
         }
 
-        $imageMetadata = wp_generate_attachment_metadata($attachmentId, $uploadResult['file']);
+        $imageMetadata = wp_generate_attachment_metadata($attachmentId, $new_file);
         wp_update_attachment_metadata($attachmentId, $imageMetadata);
 
         return $attachmentId;

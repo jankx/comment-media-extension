@@ -167,76 +167,52 @@
 
             $preview.addClass('comment-media-preview-item--uploading');
 
-            var CHUNK_SIZE = 256 * 1024;
-            var totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-            var uploadId = 'upload_' + Date.now() + '_' + index;
-            var currentChunk = 0;
+            var formData = new FormData();
+            formData.append('action', self.config.action);
+            formData.append('nonce', self.config.nonce);
+            formData.append('file', file);
 
-            function sendChunk() {
-                var start = currentChunk * CHUNK_SIZE;
-                var end = Math.min(start + CHUNK_SIZE, file.size);
-                var chunk = file.slice(start, end);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', self.config.ajaxUrl, true);
 
-                var formData = new FormData();
-                formData.append('action', self.config.action);
-                formData.append('nonce', self.config.nonce);
-                formData.append('upload_id', uploadId);
-                formData.append('file_name', file.name);
-                formData.append('file_type', file.type);
-                formData.append('file_size', file.size);
-                formData.append('chunk', chunk, file.name);
-                formData.append('chunk_index', currentChunk);
-                formData.append('total_chunks', totalChunks);
+            xhr.upload.addEventListener('progress', function (evt) {
+                if (evt.lengthComputable) {
+                    var percent = Math.round((evt.loaded / evt.total) * 100);
+                    $progressBar.css('width', percent + '%');
+                }
+            }, false);
 
-                var xhr = new XMLHttpRequest();
-                xhr.open('POST', self.config.ajaxUrl, true);
+            xhr.onload = function () {
+                var response;
+                try {
+                    response = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    response = null;
+                }
 
-                xhr.upload.addEventListener('progress', function (evt) {
-                    if (evt.lengthComputable) {
-                        var overall = Math.round(((currentChunk * CHUNK_SIZE + evt.loaded) / file.size) * 100);
-                        $progressBar.css('width', Math.min(overall, 99) + '%');
+                if (xhr.status >= 200 && xhr.status < 300 && response && response.success) {
+                    self.uploadedFiles[index] = response.data;
+                    $preview
+                        .removeClass('comment-media-preview-item--uploading')
+                        .addClass('comment-media-preview-item--done');
+                    $progress.css('width', '100%');
+                    $progress.remove();
+                    self.addHiddenInput(index, response.data.attachmentId);
+                    self.checkMaxFiles();
+                } else {
+                    var message = self.config.i18n.uploadError;
+                    if (response && response.message) {
+                        message = response.message;
                     }
-                }, false);
+                    self.handleUploadError($preview, message);
+                }
+            };
 
-                xhr.onload = function () {
-                    var response;
-                    try {
-                        response = JSON.parse(xhr.responseText);
-                    } catch (e) {
-                        response = null;
-                    }
+            xhr.onerror = function () {
+                self.handleUploadError($preview, self.config.i18n.uploadError);
+            };
 
-                    if (xhr.status >= 200 && xhr.status < 300 && response && response.success) {
-                        if (response.data && response.data.complete) {
-                            self.uploadedFiles[index] = response.data;
-                            $preview
-                                .removeClass('comment-media-preview-item--uploading')
-                                .addClass('comment-media-preview-item--done');
-                            $progress.css('width', '100%');
-                            $progress.remove();
-                            self.addHiddenInput(index, response.data.attachmentId);
-                            self.checkMaxFiles();
-                        } else {
-                            currentChunk++;
-                            sendChunk();
-                        }
-                    } else {
-                        var message = self.config.i18n.uploadError;
-                        if (response && response.message) {
-                            message = response.message;
-                        }
-                        self.handleUploadError($preview, message);
-                    }
-                };
-
-                xhr.onerror = function () {
-                    self.handleUploadError($preview, self.config.i18n.uploadError);
-                };
-
-                xhr.send(formData);
-            }
-
-            sendChunk();
+            xhr.send(formData);
         },
 
         handleUploadError: function ($preview, message) {

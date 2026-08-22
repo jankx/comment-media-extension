@@ -243,67 +243,41 @@ class CommentMediaExtension extends AbstractExtension
 
     public function handleAjaxUpload(): void
     {
+        $debug = defined('WP_DEBUG') && WP_DEBUG;
+
         if (empty($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'comment_media_upload')) {
+            if ($debug) error_log('CommentMedia AJAX: nonce failed');
             wp_send_json_error(['message' => __('Security check failed.', 'jankx')]);
         }
 
         if (!is_user_logged_in()) {
+            if ($debug) error_log('CommentMedia AJAX: not logged in');
             wp_send_json_error(['message' => __('Vui lòng đăng nhập để upload file.', 'jankx')]);
         }
 
-        if (empty($_FILES['chunk'])) {
+        if (empty($_FILES['file'])) {
+            if ($debug) error_log('CommentMedia AJAX: no file in $_FILES. Keys: ' . implode(', ', array_keys($_FILES)));
             wp_send_json_error(['message' => __('Không tìm thấy file.', 'jankx')]);
         }
 
-        $uploadId = sanitize_text_field($_POST['upload_id'] ?? '');
-        $chunkIndex = intval($_POST['chunk_index'] ?? 0);
-        $totalChunks = intval($_POST['total_chunks'] ?? 1);
-        $fileName = sanitize_file_name($_POST['file_name'] ?? 'upload');
-        $fileType = sanitize_text_field($_POST['file_type'] ?? 'application/octet-stream');
-        $fileSize = intval($_POST['file_size'] ?? 0);
+        $file = $_FILES['file'];
 
-        $chunksDir = wp_upload_dir()['basedir'] . '/.cm_chunks';
-        if (!file_exists($chunksDir)) {
-            wp_mkdir_p($chunksDir);
+        if ($debug) {
+            error_log(sprintf(
+                'CommentMedia AJAX file: name=%s type=%s size=%d error=%d',
+                $file['name'], $file['type'], $file['size'], $file['error']
+            ));
         }
-
-        $chunkFile = $chunksDir . '/' . $uploadId . '_' . $chunkIndex;
-        move_uploaded_file($_FILES['chunk']['tmp_name'], $chunkFile);
-
-        if ($chunkIndex < $totalChunks - 1) {
-            wp_send_json_success(['complete' => false]);
-        }
-
-        $finalTmp = tempnam(sys_get_temp_dir(), 'cm_');
-        $out = fopen($finalTmp, 'wb');
-        for ($i = 0; $i < $totalChunks; $i++) {
-            $cf = $chunksDir . '/' . $uploadId . '_' . $i;
-            if (file_exists($cf)) {
-                $in = fopen($cf, 'rb');
-                stream_copy_to_stream($in, $out);
-                fclose($in);
-                @unlink($cf);
-            }
-        }
-        fclose($out);
-
-        $file = [
-            'name' => $fileName,
-            'type' => $fileType,
-            'tmp_name' => $finalTmp,
-            'size' => $fileSize,
-            'error' => UPLOAD_ERR_OK,
-        ];
 
         $handler = new \Jankx\Extensions\CommentMedia\Ajax\UploadHandler();
         $result = $handler->handleFile($file);
 
-        @unlink($finalTmp);
-
         if (is_wp_error($result)) {
+            if ($debug) error_log('CommentMedia AJAX: handleFile error: ' . $result->get_error_message());
             wp_send_json_error(['message' => $result->get_error_message()]);
         }
 
+        if ($debug) error_log('CommentMedia AJAX: upload success, attachmentId=' . $result['attachmentId']);
         wp_send_json_success($result);
     }
 
