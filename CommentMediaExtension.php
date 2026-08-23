@@ -4,6 +4,8 @@ namespace Jankx\Extensions\CommentMedia;
 
 use Jankx\Extensions\AbstractExtension;
 use Jankx\Extensions\CommentMedia\Admin\Settings;
+use Jankx\Extensions\CommentMedia\Admin\MediaLibraryFilter;
+use Jankx\Extensions\CommentMedia\Admin\CleanupScheduler;
 use Jankx\Dashboard\Elements\Page;
 use Jankx\Dashboard\Elements\Section;
 use Jankx\Dashboard\Factories\FieldFactory;
@@ -62,9 +64,22 @@ class CommentMediaExtension extends AbstractExtension
 
         add_filter('comment_text', [$this, 'displayMedia'], 10, 2);
 
-        if (is_admin()) {
-            add_action('admin_init', [$this, 'registerSettingsPage']);
-        }
+        // Đăng ký các tính năng admin qua hook để đảm bảo is_admin() đúng
+        add_action('admin_init', [$this, 'registerSettingsPage']);
+        add_action('admin_init', [$this, 'bootAdminFeatures']);
+    }
+
+    /**
+     * Khởi động các tính năng admin sau khi WordPress context sẵn sàng.
+     * Dùng hook admin_init thay vì is_admin() trực tiếp để tránh timing issue.
+     */
+    public function bootAdminFeatures(): void
+    {
+        // Tab "Ảnh bình luận" trong Media Library
+        (new MediaLibraryFilter())->register();
+
+        // Lên lịch xoá orphaned comment media
+        (new CleanupScheduler())->register();
     }
 
     public function registerSettingsPage(): void
@@ -143,6 +158,17 @@ class CommentMediaExtension extends AbstractExtension
                     ],
                     'default' => ['image', 'video', 'audio'],
                     'description' => __('Chọn các loại file được phép upload.', 'jankx'),
+                ],
+                [
+                    'id'            => 'cm_orphan_days',
+                    'name'          => __('Xoá ảnh chưa attach sau (ngày)', 'jankx'),
+                    'type'          => 'slider',
+                    'min'           => 1,
+                    'max'           => 30,
+                    'step'          => 1,
+                    'default'       => 7,
+                    'display_value' => true,
+                    'description'   => __('Ảnh upload từ comment nhưng không được gắn vào bình luận nào sẽ tự động bị xoá sau số ngày này.', 'jankx'),
                 ],
             ];
 
@@ -347,6 +373,18 @@ class CommentMediaExtension extends AbstractExtension
         $mediaIds = array_slice($mediaIds, 0, $maxFiles);
 
         update_comment_meta($commentId, self::COMMENT_META_KEY, $mediaIds);
+
+        // Lấy post ID từ comment data
+        $postId = !empty($commentData['comment_post_ID'])
+            ? (int) $commentData['comment_post_ID']
+            : 0;
+
+        // Cập nhật meta cờ: attachment đã được attach vào comment
+        foreach ($mediaIds as $attachmentId) {
+            update_post_meta($attachmentId, '_comment_media_orphan', '0');
+            update_post_meta($attachmentId, '_comment_media_comment_id', $commentId);
+            update_post_meta($attachmentId, '_comment_media_post_id', $postId);
+        }
     }
 
     public function displayMedia(string $commentText, $comment = null): string

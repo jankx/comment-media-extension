@@ -198,6 +198,13 @@ class UploadHandler
         $imageMetadata = wp_generate_attachment_metadata($attachmentId, $new_file);
         wp_update_attachment_metadata($attachmentId, $imageMetadata);
 
+        // Gắn cờ để phân biệt comment media và phục vụ filter trong Media Library
+        update_post_meta($attachmentId, '_is_comment_media', '1');
+        update_post_meta($attachmentId, '_comment_media_uploaded_at', time());
+        update_post_meta($attachmentId, '_comment_media_post_id', 0);
+        update_post_meta($attachmentId, '_comment_media_comment_id', 0);
+        update_post_meta($attachmentId, '_comment_media_orphan', '1'); // Chưa attach vào comment nào
+
         return $attachmentId;
     }
 
