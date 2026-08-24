@@ -107,7 +107,7 @@ class CommentMediaExtension extends AbstractExtension
 
             $page = new Page(__('Media trong bình luận', 'jankx'));
             $page->setId('comment_media');
-            $page->setIcon('dashicons-format-gallery');
+            $page->setIcon('dashicons-before dashicons-format-gallery');
             $page->setDescription(__('Cấu hình upload ảnh, video, audio trong bình luận.', 'jankx'));
             $page->setPriority(90);
 
@@ -160,15 +160,15 @@ class CommentMediaExtension extends AbstractExtension
                     'description' => __('Chọn các loại file được phép upload.', 'jankx'),
                 ],
                 [
-                    'id'            => 'cm_orphan_days',
-                    'name'          => __('Xoá ảnh chưa attach sau (ngày)', 'jankx'),
-                    'type'          => 'slider',
-                    'min'           => 1,
-                    'max'           => 30,
-                    'step'          => 1,
-                    'default'       => 7,
+                    'id' => 'cm_orphan_days',
+                    'name' => __('Xoá ảnh chưa attach sau (ngày)', 'jankx'),
+                    'type' => 'slider',
+                    'min' => 1,
+                    'max' => 30,
+                    'step' => 1,
+                    'default' => 7,
                     'display_value' => true,
-                    'description'   => __('Ảnh upload từ comment nhưng không được gắn vào bình luận nào sẽ tự động bị xoá sau số ngày này.', 'jankx'),
+                    'description' => __('Ảnh upload từ comment nhưng không được gắn vào bình luận nào sẽ tự động bị xoá sau số ngày này.', 'jankx'),
                 ],
             ];
 
@@ -272,17 +272,20 @@ class CommentMediaExtension extends AbstractExtension
         $debug = defined('WP_DEBUG') && WP_DEBUG;
 
         if (empty($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'comment_media_upload')) {
-            if ($debug) error_log('CommentMedia AJAX: nonce failed');
+            if ($debug)
+                error_log('CommentMedia AJAX: nonce failed');
             wp_send_json_error(['message' => __('Security check failed.', 'jankx')]);
         }
 
         if (!is_user_logged_in()) {
-            if ($debug) error_log('CommentMedia AJAX: not logged in');
+            if ($debug)
+                error_log('CommentMedia AJAX: not logged in');
             wp_send_json_error(['message' => __('Vui lòng đăng nhập để upload file.', 'jankx')]);
         }
 
         if (empty($_FILES['file'])) {
-            if ($debug) error_log('CommentMedia AJAX: no file in $_FILES. Keys: ' . implode(', ', array_keys($_FILES)));
+            if ($debug)
+                error_log('CommentMedia AJAX: no file in $_FILES. Keys: ' . implode(', ', array_keys($_FILES)));
             wp_send_json_error(['message' => __('Không tìm thấy file.', 'jankx')]);
         }
 
@@ -291,7 +294,10 @@ class CommentMediaExtension extends AbstractExtension
         if ($debug) {
             error_log(sprintf(
                 'CommentMedia AJAX file: name=%s type=%s size=%d error=%d',
-                $file['name'], $file['type'], $file['size'], $file['error']
+                $file['name'],
+                $file['type'],
+                $file['size'],
+                $file['error']
             ));
         }
 
@@ -299,11 +305,13 @@ class CommentMediaExtension extends AbstractExtension
         $result = $handler->handleFile($file);
 
         if (is_wp_error($result)) {
-            if ($debug) error_log('CommentMedia AJAX: handleFile error: ' . $result->get_error_message());
+            if ($debug)
+                error_log('CommentMedia AJAX: handleFile error: ' . $result->get_error_message());
             wp_send_json_error(['message' => $result->get_error_message()]);
         }
 
-        if ($debug) error_log('CommentMedia AJAX: upload success, attachmentId=' . $result['attachmentId']);
+        if ($debug)
+            error_log('CommentMedia AJAX: upload success, attachmentId=' . $result['attachmentId']);
         wp_send_json_success($result);
     }
 
@@ -318,7 +326,8 @@ class CommentMediaExtension extends AbstractExtension
         <div class="comment-media-upload-wrapper">
             <div class="comment-media-upload-zone" id="comment-media-upload-zone">
                 <div class="comment-media-upload-content">
-                    <svg class="comment-media-upload-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg class="comment-media-upload-icon" width="40" height="40" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                         <circle cx="8.5" cy="8.5" r="1.5"></circle>
                         <polyline points="21 15 16 10 5 21"></polyline>
@@ -344,11 +353,8 @@ class CommentMediaExtension extends AbstractExtension
                         ?>
                     </p>
                 </div>
-                <input type="file"
-                       id="comment-media-file-input"
-                       class="comment-media-file-input"
-                       multiple
-                       accept="image/*,video/*,audio/*">
+                <input type="file" id="comment-media-file-input" class="comment-media-file-input" multiple
+                    accept="image/*,video/*,audio/*">
                 <div class="comment-media-preview-grid" id="comment-media-preview-grid"></div>
             </div>
         </div>
@@ -418,29 +424,28 @@ class CommentMediaExtension extends AbstractExtension
         ob_start();
         ?>
         <div class="comment-media-grid">
-            <?php foreach ($validIds as $mediaId) :
+            <?php foreach ($validIds as $mediaId):
                 $url = wp_get_attachment_url($mediaId);
                 $mimeType = get_post_mime_type($mediaId);
                 $name = get_the_title($mediaId);
                 $type = explode('/', $mimeType)[0];
-            ?>
+                ?>
                 <div class="comment-media-item comment-media-item--<?php echo esc_attr($type); ?>">
-                    <?php if ($type === 'image') : ?>
-                        <a href="<?php echo esc_url($url); ?>"
-                           class="comment-media-link"
-                           data-lightbox="comment-media-<?php echo esc_attr($mediaId); ?>">
+                    <?php if ($type === 'image'): ?>
+                        <a href="<?php echo esc_url($url); ?>" class="comment-media-link"
+                            data-lightbox="comment-media-<?php echo esc_attr($mediaId); ?>">
                             <?php echo wp_get_attachment_image($mediaId, 'medium', false, [
                                 'class' => 'comment-media-image',
                                 'alt' => esc_attr($name),
                                 'loading' => 'lazy',
                             ]); ?>
                         </a>
-                    <?php elseif ($type === 'video') : ?>
+                    <?php elseif ($type === 'video'): ?>
                         <video controls class="comment-media-video" preload="metadata">
                             <source src="<?php echo esc_url($url); ?>" type="<?php echo esc_attr($mimeType); ?>">
                             <?php echo esc_html__('Trình duyệt không hỗ trợ video.', 'jankx'); ?>
                         </video>
-                    <?php elseif ($type === 'audio') : ?>
+                    <?php elseif ($type === 'audio'): ?>
                         <div class="comment-media-audio">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M9 18V5l12-2v13"></path>
