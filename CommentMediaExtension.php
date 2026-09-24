@@ -58,9 +58,9 @@ class CommentMediaExtension extends AbstractExtension
 
         add_action('rest_api_init', [$this, 'registerRestRoutes']);
 
-        add_action('comment_form_top', [$this, 'addMediaUploadZone']);
-
         add_action('comment_post', [$this, 'saveMedia'], 10, 3);
+
+        $this->registerUploadZoneHook();
 
         add_filter('comment_text', [$this, 'displayMedia'], 10, 2);
 
@@ -158,6 +158,14 @@ class CommentMediaExtension extends AbstractExtension
                     ],
                     'default' => ['image', 'video', 'audio'],
                     'description' => __('Chọn các loại file được phép upload.', 'jankx'),
+                ],
+                [
+                    'id' => 'cm_upload_zone_position',
+                    'name' => __('Vị trí hộp kéo thả', 'jankx'),
+                    'type' => 'select',
+                    'options' => $this->getUploadZonePositions(),
+                    'default' => 'comment_form_submit_field',
+                    'description' => __('Chọn hook mà hộp kéo thả media sẽ được đăng ký trong biểu mẫu bình luận.', 'jankx'),
                 ],
                 [
                     'id' => 'cm_orphan_days',
@@ -315,10 +323,75 @@ class CommentMediaExtension extends AbstractExtension
         wp_send_json_success($result);
     }
 
-    public function addMediaUploadZone($post = null): void
+    /**
+     * Register the upload zone on the chosen comment form hook.
+     *
+     * The hook to attach to is configurable via theme options
+     * (`comment_form_submit_field` by default). Other hooks can be added or
+     * removed through the `jankx/comment_media/upload_zone_positions` filter.
+     */
+    protected function registerUploadZoneHook(): void
+    {
+        $positions = $this->getUploadZonePositions();
+        $hook = $this->getUploadZonePosition();
+
+        if (!isset($positions[$hook])) {
+            return;
+        }
+
+        if ($hook === 'comment_form_submit_field') {
+            add_filter($hook, [$this, 'prependUploadZoneToSubmit'], 10, 2);
+            return;
+        }
+
+        add_action($hook, [$this, 'renderUploadZoneAction']);
+    }
+
+    /**
+     * Available upload zone positions: comment form hook => human label.
+     *
+     * Hook names are the option value; labels are the human readable text.
+     * Extend or trim the list via the `jankx/comment_media/upload_zone_positions`
+     * filter (return a map of hook => label).
+     */
+    public function getUploadZonePositions(): array
+    {
+        $positions = [
+            'comment_form_top'          => __('Đầu biểu mẫu bình luận', 'jankx'),
+            'comment_form_submit_field' => __('Trên nút gửi bình luận', 'jankx'),
+        ];
+
+        return (array) apply_filters('jankx/comment_media/upload_zone_positions', $positions);
+    }
+
+    /**
+     * The configured position hook; falls back to the default when unknown.
+     */
+    public function getUploadZonePosition(): string
+    {
+        $default = 'comment_form_submit_field';
+        $positions = $this->getUploadZonePositions();
+        $stored = Settings::getOption(Settings::FIELD_UPLOAD_ZONE_POSITION, $default);
+
+        if (!is_string($stored) || !isset($positions[$stored])) {
+            return $default;
+        }
+
+        return $stored;
+    }
+
+    /**
+     * Render the upload zone for comment form hooks that expect output.
+     */
+    public function renderUploadZoneAction(): void
+    {
+        echo $this->renderUploadZone();
+    }
+
+    public function renderUploadZone(): string
     {
         if (!$this->isEnabled()) {
-            return;
+            return '';
         }
 
         ob_start();
@@ -359,7 +432,15 @@ class CommentMediaExtension extends AbstractExtension
             </div>
         </div>
         <?php
-        echo ob_get_clean();
+        return ob_get_clean();
+    }
+
+    /**
+     * Prepend the upload zone right above the comment submit button.
+     */
+    public function prependUploadZoneToSubmit(string $submitField, array $args = []): string
+    {
+        return $this->renderUploadZone() . $submitField;
     }
 
     public function saveMedia(int $commentId, int $approved, array $commentData): void
