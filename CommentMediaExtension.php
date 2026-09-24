@@ -168,6 +168,14 @@ class CommentMediaExtension extends AbstractExtension
                     'description' => __('Chọn hook mà hộp kéo thả media sẽ được đăng ký trong biểu mẫu bình luận.', 'jankx'),
                 ],
                 [
+                    'id' => 'cm_post_types',
+                    'name' => __('Áp dụng cho post types', 'jankx'),
+                    'type' => 'checkbox',
+                    'options' => $this->getPostTypeChoices(),
+                    'default' => [],
+                    'description' => __('Chọn các post types được phép upload media khi bình luận. Bỏ trống = áp dụng cho mọi post type.', 'jankx'),
+                ],
+                [
                     'id' => 'cm_orphan_days',
                     'name' => __('Xoá ảnh chưa attach sau (ngày)', 'jankx'),
                     'type' => 'slider',
@@ -381,6 +389,62 @@ class CommentMediaExtension extends AbstractExtension
     }
 
     /**
+     * Post types that support comment media.
+     *
+     * An empty array means every post type is supported. The list can be
+     * extended/trimmed via the `jankx/comment_media/supported_post_types`
+     * filter (only used when the theme option is left empty).
+     */
+    public function getPostTypes(): array
+    {
+        $stored = Settings::getOption(Settings::FIELD_POST_TYPES, []);
+
+        if (is_array($stored) && !empty($stored)) {
+            return array_values(array_filter(array_map('sanitize_key', $stored)));
+        }
+
+        $postTypes = apply_filters('jankx/comment_media/supported_post_types', []);
+        if (is_array($postTypes) && !empty($postTypes)) {
+            return array_values(array_filter(array_map('sanitize_key', $postTypes)));
+        }
+
+        return [];
+    }
+
+    /**
+     * All post types available as choices in the theme options, filtered by
+     * `jankx/comment_media/post_type_choices` for custom ordering/trimming.
+     */
+    public function getPostTypeChoices(): array
+    {
+        $postTypes = get_post_types(['public' => true], 'objects');
+        $choices = [];
+
+        foreach ($postTypes as $postType) {
+            $choices[$postType->name] = $postType->labels->singular_name
+                ? $postType->labels->singular_name . ' (' . $postType->name . ')'
+                : $postType->name;
+        }
+
+        return (array) apply_filters('jankx/comment_media/post_type_choices', $choices);
+    }
+
+    /**
+     * Whether comment media is supported on the post type of a post.
+     */
+    public function isSupportedPostType(?int $postId = null): bool
+    {
+        $post = $postId ? get_post($postId) : get_post();
+        if (!$post instanceof \WP_Post) {
+            return false;
+        }
+
+        $postTypes = $this->getPostTypes();
+
+        return empty($postTypes) || in_array($post->post_type, $postTypes, true);
+    }
+
+    /**
      * Render the upload zone for comment form hooks that expect output.
      */
     public function renderUploadZoneAction(): void
@@ -391,6 +455,9 @@ class CommentMediaExtension extends AbstractExtension
     public function renderUploadZone(): string
     {
         if (!$this->isEnabled()) {
+            return '';
+        }
+        if (!$this->isSupportedPostType()) {
             return '';
         }
 
@@ -446,6 +513,9 @@ class CommentMediaExtension extends AbstractExtension
     public function saveMedia(int $commentId, int $approved, array $commentData): void
     {
         if (empty($_POST['comment_media_ids'])) {
+            return;
+        }
+        if (!$this->isSupportedPostType(!empty($commentData['comment_post_ID']) ? (int) $commentData['comment_post_ID'] : null)) {
             return;
         }
 

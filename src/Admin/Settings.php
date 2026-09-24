@@ -10,6 +10,7 @@ class Settings
     const FIELD_ALLOWED_TYPES      = 'cm_allowed_types';
     const FIELD_ORPHAN_DAYS        = 'cm_orphan_days';
     const FIELD_UPLOAD_ZONE_POSITION = 'cm_upload_zone_position';
+    const FIELD_POST_TYPES         = 'cm_post_types';
 
     public static function getOption(string $key, $default = null)
     {
