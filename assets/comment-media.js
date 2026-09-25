@@ -3,122 +3,150 @@
 
     const CommentMedia = {
         config: null,
-        uploadedFiles: [],
-        $zone: null,
-        $grid: null,
-        $fileInput: null,
-        $form: null,
+        uploaders: [],
 
         init: function () {
             this.config = window.commentMedia;
             if (!this.config) return;
 
-            this.$form = $('form#commentform');
-            if (!this.$form.length) return;
+            const zones = document.querySelectorAll('.comment-media-upload-zone');
+            if (!zones.length) return;
 
-            this.$zone = $('#comment-media-upload-zone');
-            this.$grid = $('#comment-media-preview-grid');
-            this.$fileInput = $('#comment-media-file-input');
+            const self = this;
+            zones.forEach(function (zone) {
+                self.uploaders.push(self.createUploader(zone));
+            });
 
-            if (!this.$zone.length) return;
-
-            this.bindEvents();
-            this.checkMaxFiles();
+            window.commentMediaUploaders = this.uploaders;
         },
 
-        bindEvents: function () {
+        createUploader: function (zone) {
+            const $zone = $(zone);
+            const $grid = $zone.find('.comment-media-preview-grid').first();
+            const $fileInput = $zone.find('.comment-media-file-input').first();
+
+            if (!$zone.length || !$grid.length || !$fileInput.length) {
+                return null;
+            }
+
+            let $owner = $zone.closest('form#commentform');
+            if (!$owner.length) {
+                $owner = $zone.closest('.jankx-review-form');
+            }
+            if (!$owner.length) {
+                $owner = $zone.closest('form');
+            }
+            if (!$owner.length) {
+                $owner = $zone;
+            }
+
+            const uploader = {
+                config: CommentMedia.config,
+                $zone: $zone,
+                $grid: $grid,
+                $fileInput: $fileInput,
+                $owner: $owner,
+                uploading: 0,
+                seq: 0
+            };
+
+            CommentMedia.bindEvents(uploader);
+            CommentMedia.checkMaxFiles(uploader);
+
+            $zone.on('comment-media:reset', function () {
+                CommentMedia.reset(uploader);
+            });
+
+            return uploader;
+        },
+
+        bindEvents: function (u) {
             const self = this;
 
-            this.$fileInput.on('change', function (e) {
-                self.handleFiles(e.target.files);
+            u.$fileInput.on('change', function (e) {
+                self.handleFiles(u, e.target.files);
                 this.value = '';
             });
 
-            this.$zone.on('dragover', function (e) {
+            u.$zone.on('dragover', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).addClass('comment-media-zone--dragover');
             });
 
-            this.$zone.on('dragleave drop', function (e) {
+            u.$zone.on('dragleave drop', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).removeClass('comment-media-zone--dragover');
             });
 
-            this.$zone.on('drop', function (e) {
-                const files = e.originalEvent.dataTransfer.files;
-                self.handleFiles(files);
+            u.$zone.on('drop', function (e) {
+                self.handleFiles(u, e.originalEvent.dataTransfer.files);
             });
 
-            this.$grid.on('click', '.comment-media-remove-btn', function (e) {
+            u.$grid.on('click', '.comment-media-remove-btn', function (e) {
                 e.preventDefault();
                 const $item = $(this).closest('.comment-media-preview-item');
-                const index = $item.data('index');
-                self.removeFile(index, $item);
+                self.removeFile(u, $item.data('index'), $item);
             });
 
-            this.$form.on('submit', function () {
-                self.onSubmit();
+            u.$owner.on('submit', function () {
+                if (self.isUploading(u)) {
+                    self.showToast(u, self.config.i18n.uploading, 'warning');
+                    return false;
+                }
             });
         },
 
-        handleFiles: function (files) {
+        isUploading: function (u) {
+            return u.uploading > 0;
+        },
+
+        handleFiles: function (u, files) {
             if (!files || !files.length) return;
 
             const self = this;
-            const remaining = this.config.maxFiles - this.uploadedFiles.length;
+            const remaining = this.config.maxFiles - this.countFiles(u);
 
             if (remaining <= 0) {
-                this.showToast(this.config.i18n.maxFilesExceeded, 'warning');
+                this.showToast(u, this.config.i18n.maxFilesExceeded, 'warning');
                 return;
             }
 
             const filesToProcess = Array.from(files).slice(0, remaining);
 
             if (files.length > remaining) {
-                this.showToast(
-                    this.config.i18n.maxFilesExceeded,
-                    'warning'
-                );
+                this.showToast(u, this.config.i18n.maxFilesExceeded, 'warning');
             }
 
             filesToProcess.forEach(function (file) {
-                self.processFile(file);
+                self.processFile(u, file);
             });
         },
 
-        processFile: function (file) {
-            const self = this;
-
-            if (!this.validateFile(file)) {
+        processFile: function (u, file) {
+            if (!this.validateFile(u, file)) {
                 return;
             }
 
-            const index = this.uploadedFiles.length;
-            const $preview = this.createPreviewElement(file, index);
-            this.$grid.append($preview);
+            const key = u.seq++;
+            const $preview = this.createPreviewElement(u, file, key);
+            u.$grid.append($preview);
 
-            this.uploadFile(file, $preview, index);
+            this.uploadFile(u, file, $preview, key);
         },
 
-        validateFile: function (file) {
+        validateFile: function (u, file) {
             const maxSizeBytes = this.config.maxSize * 1024 * 1024;
 
             if (file.size > maxSizeBytes) {
-                this.showToast(
-                    this.config.i18n.fileTooLarge + ': ' + file.name,
-                    'error'
-                );
+                this.showToast(u, this.config.i18n.fileTooLarge + ': ' + file.name, 'error');
                 return false;
             }
 
             const fileType = this.getFileCategory(file.type);
             if (!fileType || !this.config.allowedTypes.includes(fileType)) {
-                this.showToast(
-                    this.config.i18n.invalidType + ': ' + file.name,
-                    'error'
-                );
+                this.showToast(u, this.config.i18n.invalidType + ': ' + file.name, 'error');
                 return false;
             }
 
@@ -132,7 +160,8 @@
             return null;
         },
 
-        createPreviewElement: function (file, index) {
+        createPreviewElement: function (u, file, index) {
+            const self = this;
             const $item = $('<div class="comment-media-preview-item" data-index="' + index + '">');
             const $preview = $('<div class="comment-media-preview-content">');
             const $removeBtn = $('<button type="button" class="comment-media-remove-btn" title="' + this.config.i18n.removeFile + '">×</button>');
@@ -154,36 +183,38 @@
                 $preview.prepend('<div class="comment-media-preview-audio-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>');
             }
 
-            var self = this;
             $item.append($preview, $removeBtn, $progress, $info);
 
             return $item;
         },
 
-        uploadFile: function (file, $preview, index) {
-            var self = this;
-            var $progressBar = $preview.find('.comment-media-progress-bar');
-            var $progress = $preview.find('.comment-media-progress');
+        uploadFile: function (u, file, $preview, key) {
+            const self = this;
+            const $progressBar = $preview.find('.comment-media-progress-bar');
+            const $progress = $preview.find('.comment-media-progress');
 
             $preview.addClass('comment-media-preview-item--uploading');
+            u.uploading++;
 
-            var formData = new FormData();
-            formData.append('action', self.config.action);
-            formData.append('nonce', self.config.nonce);
+            const formData = new FormData();
+            formData.append('action', this.config.action);
+            formData.append('nonce', this.config.nonce);
             formData.append('file', file);
 
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', self.config.ajaxUrl, true);
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', this.config.ajaxUrl, true);
 
             xhr.upload.addEventListener('progress', function (evt) {
                 if (evt.lengthComputable) {
-                    var percent = Math.round((evt.loaded / evt.total) * 100);
+                    const percent = Math.round((evt.loaded / evt.total) * 100);
                     $progressBar.css('width', percent + '%');
                 }
             }, false);
 
             xhr.onload = function () {
-                var response;
+                u.uploading = Math.max(0, u.uploading - 1);
+
+                let response;
                 try {
                     response = JSON.parse(xhr.responseText);
                 } catch (e) {
@@ -191,31 +222,31 @@
                 }
 
                 if (xhr.status >= 200 && xhr.status < 300 && response && response.success) {
-                    self.uploadedFiles[index] = response.data;
                     $preview
                         .removeClass('comment-media-preview-item--uploading')
                         .addClass('comment-media-preview-item--done');
                     $progress.css('width', '100%');
                     $progress.remove();
-                    self.addHiddenInput(index, response.data.attachmentId);
-                    self.checkMaxFiles();
+                    self.addHiddenInput(u, response.data.attachmentId, key);
+                    self.checkMaxFiles(u);
                 } else {
-                    var message = self.config.i18n.uploadError;
+                    let message = self.config.i18n.uploadError;
                     if (response && response.message) {
                         message = response.message;
                     }
-                    self.handleUploadError($preview, message);
+                    self.handleUploadError(u, $preview, message);
                 }
             };
 
             xhr.onerror = function () {
-                self.handleUploadError($preview, self.config.i18n.uploadError);
+                u.uploading = Math.max(0, u.uploading - 1);
+                self.handleUploadError(u, $preview, self.config.i18n.uploadError);
             };
 
             xhr.send(formData);
         },
 
-        handleUploadError: function ($preview, message) {
+        handleUploadError: function (u, $preview, message) {
             $preview
                 .removeClass('comment-media-preview-item--uploading')
                 .addClass('comment-media-preview-item--error');
@@ -225,10 +256,11 @@
                     this.escapeHtml(message) +
                     '</span>'
             );
+            this.checkMaxFiles(u);
         },
 
-        addHiddenInput: function (index, attachmentId) {
-            this.$form.append(
+        addHiddenInput: function (u, attachmentId, index) {
+            u.$owner.append(
                 '<input type="hidden" name="comment_media_ids[]" value="' +
                     attachmentId +
                     '" class="comment-media-hidden-input" data-index="' +
@@ -237,48 +269,43 @@
             );
         },
 
-        removeFile: function (index, $item) {
+        removeFile: function (u, index, $item) {
             $item.fadeOut(200, function () {
                 $(this).remove();
             });
 
-            this.uploadedFiles[index] = null;
-
-            this.$form.find(
+            u.$owner.find(
                 '.comment-media-hidden-input[data-index="' + index + '"]'
             ).remove();
 
-            this.checkMaxFiles();
+            this.checkMaxFiles(u);
         },
 
-        checkMaxFiles: function () {
-            const count = this.uploadedFiles.filter(
-                function (f) {
-                    return f !== null;
-                }
-            ).length;
+        countFiles: function (u) {
+            return u.$grid.find('.comment-media-preview-item').length;
+        },
+
+        checkMaxFiles: function (u) {
+            const count = this.countFiles(u);
 
             if (count >= this.config.maxFiles) {
-                this.$zone.addClass('comment-media-zone--max-reached');
-                this.$fileInput.prop('disabled', true);
+                u.$zone.addClass('comment-media-zone--max-reached');
+                u.$fileInput.prop('disabled', true);
             } else {
-                this.$zone.removeClass('comment-media-zone--max-reached');
-                this.$fileInput.prop('disabled', false);
+                u.$zone.removeClass('comment-media-zone--max-reached');
+                u.$fileInput.prop('disabled', false);
             }
         },
 
-        onSubmit: function () {
-            const uploading = this.$zone.find(
-                '.comment-media-preview-item--uploading'
-            ).length;
-
-            if (uploading > 0) {
-                this.showToast(this.config.i18n.uploading, 'warning');
-                return false;
-            }
+        reset: function (u) {
+            u.$grid.empty();
+            u.$owner.find('.comment-media-hidden-input').remove();
+            u.uploading = 0;
+            u.seq = 0;
+            this.checkMaxFiles(u);
         },
 
-        showToast: function (message, type) {
+        showToast: function (u, message, type) {
             type = type || 'info';
 
             const $toast = $(

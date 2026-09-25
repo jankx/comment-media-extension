@@ -452,19 +452,23 @@ class CommentMediaExtension extends AbstractExtension
         echo $this->renderUploadZone();
     }
 
-    public function renderUploadZone(): string
+    public function renderUploadZone(string $idPrefix = '', ?int $postId = null): string
     {
         if (!$this->isEnabled()) {
             return '';
         }
-        if (!$this->isSupportedPostType()) {
+        if (!$this->isSupportedPostType($postId)) {
             return '';
         }
+
+        $zoneId = $idPrefix . 'comment-media-upload-zone';
+        $inputId = $idPrefix . 'comment-media-file-input';
+        $gridId = $idPrefix . 'comment-media-preview-grid';
 
         ob_start();
         ?>
         <div class="comment-media-upload-wrapper">
-            <div class="comment-media-upload-zone" id="comment-media-upload-zone">
+            <div class="comment-media-upload-zone" id="<?php echo esc_attr($zoneId); ?>">
                 <div class="comment-media-upload-content">
                     <svg class="comment-media-upload-icon" width="40" height="40" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2">
@@ -477,7 +481,7 @@ class CommentMediaExtension extends AbstractExtension
                     </p>
                     <p class="comment-media-upload-hint">
                         <?php echo esc_html__('hoặc', 'jankx'); ?>
-                        <label class="comment-media-upload-btn" for="comment-media-file-input">
+                        <label class="comment-media-upload-btn" for="<?php echo esc_attr($inputId); ?>">
                             <?php echo esc_html__('chọn file', 'jankx'); ?>
                         </label>
                     </p>
@@ -493,9 +497,9 @@ class CommentMediaExtension extends AbstractExtension
                         ?>
                     </p>
                 </div>
-                <input type="file" id="comment-media-file-input" class="comment-media-file-input" multiple
+                <input type="file" id="<?php echo esc_attr($inputId); ?>" class="comment-media-file-input" multiple
                     accept="image/*,video/*,audio/*">
-                <div class="comment-media-preview-grid" id="comment-media-preview-grid"></div>
+                <div class="comment-media-preview-grid" id="<?php echo esc_attr($gridId); ?>"></div>
             </div>
         </div>
         <?php
