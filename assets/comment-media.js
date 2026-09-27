@@ -352,7 +352,194 @@
         },
     };
 
+    /**
+     * Gallery lightbox: click an image inside a comment's media grid and
+     * browse all images of THAT comment in a fullscreen overlay.
+     *
+     * Delegated on document so comments injected via AJAX (custom-comments
+     * refresh / load more / reply append) work without rebinding.
+     */
+    const Gallery = {
+        overlay: null,
+        items: [],
+        index: 0,
+        lastFocus: null,
+
+        init: function () {
+            document.addEventListener('click', function (e) {
+                const link = e.target.closest
+                    ? e.target.closest('a.comment-media-link')
+                    : null;
+                if (!link) return;
+
+                e.preventDefault();
+                Gallery.openFrom(link);
+            });
+        },
+
+        openFrom: function (link) {
+            const grid = link.closest('.comment-media-grid');
+            const links = grid
+                ? Array.prototype.slice.call(
+                      grid.querySelectorAll('a.comment-media-link')
+                  )
+                : [link];
+
+            const items = links.map(function (a) {
+                const img = a.querySelector('img');
+                return {
+                    href: a.getAttribute('href'),
+                    src: img && img.src ? img.src : a.getAttribute('href'),
+                    alt: img ? img.alt || '' : '',
+                };
+            });
+
+            const index = Math.max(0, links.indexOf(link));
+
+            this.lastFocus = document.activeElement;
+            this.open(items, index);
+        },
+
+        i18n: function (key, fallback) {
+            const cfg = window.commentMedia;
+            return (cfg && cfg.i18n && cfg.i18n[key]) || fallback;
+        },
+
+        build: function () {
+            if (this.overlay) return;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'cm-gallery';
+            wrap.hidden = true;
+            wrap.innerHTML =
+                '<button type="button" class="cm-gallery__close" aria-label="' +
+                this.escape(this.i18n('galleryClose', 'Đóng')) +
+                '">' +
+                '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                '</button>' +
+                '<button type="button" class="cm-gallery__prev" aria-label="' +
+                this.escape(this.i18n('galleryPrev', 'Ảnh trước')) +
+                '">' +
+                '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>' +
+                '</button>' +
+                '<figure class="cm-gallery__figure">' +
+                '<img class="cm-gallery__img" alt="">' +
+                '<figcaption class="cm-gallery__counter"></figcaption>' +
+                '</figure>' +
+                '<button type="button" class="cm-gallery__next" aria-label="' +
+                this.escape(this.i18n('galleryNext', 'Ảnh tiếp')) +
+                '">' +
+                '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>' +
+                '</button>';
+
+            document.body.appendChild(wrap);
+            this.overlay = wrap;
+
+            wrap.addEventListener('click', function (e) {
+                if (
+                    e.target === wrap ||
+                    e.target.closest('.cm-gallery__close')
+                ) {
+                    Gallery.close();
+                } else if (e.target.closest('.cm-gallery__prev')) {
+                    Gallery.step(-1);
+                } else if (e.target.closest('.cm-gallery__next')) {
+                    Gallery.step(1);
+                }
+            });
+
+            document.addEventListener('keydown', function (e) {
+                if (!Gallery.overlay || Gallery.overlay.hidden) return;
+                if (e.key === 'Escape') Gallery.close();
+                else if (e.key === 'ArrowLeft') Gallery.step(-1);
+                else if (e.key === 'ArrowRight') Gallery.step(1);
+            });
+
+            let touchX = null;
+            wrap.addEventListener(
+                'touchstart',
+                function (e) {
+                    touchX = e.changedTouches[0].clientX;
+                },
+                { passive: true }
+            );
+            wrap.addEventListener(
+                'touchend',
+                function (e) {
+                    if (touchX === null) return;
+                    const dx = e.changedTouches[0].clientX - touchX;
+                    touchX = null;
+                    if (Math.abs(dx) > 50) Gallery.step(dx < 0 ? 1 : -1);
+                },
+                { passive: true }
+            );
+        },
+
+        open: function (items, index) {
+            if (!items.length) return;
+            this.build();
+            this.items = items;
+
+            this.overlay.hidden = false;
+            document.body.classList.add('cm-gallery-open');
+            this.show(index);
+
+            this.overlay.querySelector('.cm-gallery__close').focus();
+        },
+
+        close: function () {
+            if (!this.overlay) return;
+            this.overlay.hidden = true;
+            document.body.classList.remove('cm-gallery-open');
+            this.items = [];
+
+            if (this.lastFocus && this.lastFocus.focus) {
+                this.lastFocus.focus();
+            }
+            this.lastFocus = null;
+        },
+
+        step: function (delta) {
+            this.show(this.index + delta);
+        },
+
+        show: function (i) {
+            if (!this.items.length) return;
+
+            const total = this.items.length;
+            this.index = ((i % total) + total) % total;
+
+            const item = this.items[this.index];
+            const img = this.overlay.querySelector('.cm-gallery__img');
+            const counter = this.overlay.querySelector('.cm-gallery__counter');
+            const single = total < 2;
+
+            img.src = item.href;
+            img.alt = item.alt;
+            counter.textContent = this.index + 1 + ' / ' + total;
+
+            this.overlay.querySelector('.cm-gallery__prev').hidden = single;
+            this.overlay.querySelector('.cm-gallery__next').hidden = single;
+
+            // Preload neighbours so swiping feels instant.
+            [this.index - 1, this.index + 1].forEach(function (n) {
+                const idx = ((n % total) + total) % total;
+                const pre = new Image();
+                pre.src = Gallery.items[idx].href;
+            });
+        },
+
+        escape: function (text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        },
+    };
+
     $(document).ready(function () {
         CommentMedia.init();
+        Gallery.init();
     });
 })(jQuery);

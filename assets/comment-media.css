@@ -343,3 +343,147 @@
         bottom: 16px;
     }
 }
+
+/* Gallery lightbox (click image in a comment) */
+.cm-gallery {
+    position: fixed;
+    inset: 0;
+    z-index: 10005;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.92);
+    padding: 24px;
+}
+
+.cm-gallery[hidden] {
+    display: none;
+}
+
+.cm-gallery:not([hidden]) {
+    animation: cm-gallery-fade 0.18s ease;
+}
+
+@keyframes cm-gallery-fade {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.cm-gallery__figure {
+    margin: 0;
+    max-width: 92vw;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.cm-gallery__img {
+    max-width: 92vw;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.cm-gallery__counter {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cm-gallery__close,
+.cm-gallery__prev,
+.cm-gallery__next {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s ease;
+}
+
+.cm-gallery__close:hover,
+.cm-gallery__prev:hover,
+.cm-gallery__next:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.cm-gallery__close:focus-visible,
+.cm-gallery__prev:focus-visible,
+.cm-gallery__next:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.cm-gallery__close {
+    top: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    z-index: 2;
+}
+
+.cm-gallery__prev,
+.cm-gallery__next {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 52px;
+    height: 52px;
+}
+
+.cm-gallery__prev {
+    left: 16px;
+}
+
+.cm-gallery__next {
+    right: 16px;
+}
+
+.cm-gallery__prev[hidden],
+.cm-gallery__next[hidden] {
+    display: none;
+}
+
+body.cm-gallery-open {
+    overflow: hidden;
+}
+
+@media (max-width: 640px) {
+    .cm-gallery {
+        padding: 12px;
+    }
+
+    .cm-gallery__close {
+        top: 10px;
+        right: 10px;
+        width: 40px;
+        height: 40px;
+    }
+
+    .cm-gallery__prev,
+    .cm-gallery__next {
+        width: 44px;
+        height: 44px;
+    }
+
+    .cm-gallery__prev {
+        left: 8px;
+    }
+
+    .cm-gallery__next {
+        right: 8px;
+    }
+}

@@ -222,14 +222,14 @@ class CommentMediaExtension extends AbstractExtension
             'comment-media',
             $this->get_extension_url() . '/assets/comment-media.css',
             [],
-            '1.0.0'
+            '1.1.0'
         );
 
         wp_enqueue_script(
             'comment-media',
             $this->get_extension_url() . '/assets/comment-media.js',
             ['jquery'],
-            '1.0.0',
+            '1.1.0',
             true
         );
 
@@ -254,6 +254,9 @@ class CommentMediaExtension extends AbstractExtension
                 'images' => __('Ảnh', 'jankx'),
                 'videos' => __('Video', 'jankx'),
                 'audio' => __('Âm thanh', 'jankx'),
+                'galleryClose' => __('Đóng', 'jankx'),
+                'galleryPrev' => __('Ảnh trước', 'jankx'),
+                'galleryNext' => __('Ảnh tiếp', 'jankx'),
             ],
         ]);
     }
@@ -587,8 +590,7 @@ class CommentMediaExtension extends AbstractExtension
                 ?>
                 <div class="comment-media-item comment-media-item--<?php echo esc_attr($type); ?>">
                     <?php if ($type === 'image'): ?>
-                        <a href="<?php echo esc_url($url); ?>" class="comment-media-link"
-                            data-lightbox="comment-media-<?php echo esc_attr($mediaId); ?>">
+                        <a href="<?php echo esc_url($url); ?>" class="comment-media-link">
                             <?php echo wp_get_attachment_image($mediaId, 'medium', false, [
                                 'class' => 'comment-media-image',
                                 'alt' => esc_attr($name),
